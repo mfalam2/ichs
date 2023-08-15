@@ -1,2 +1,2 @@
 # Iteratively compressed Hamiltonian simulation 
-Simple noiseless, statevector simulator implementing Hamiltonian simulation with iterative compression. 
+An implementation of Hamiltonian simulation with iterative compression. The algorithm runs on a simple, noiseless statevector simulator written in JAX. 
