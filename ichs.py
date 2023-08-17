@@ -35,39 +35,45 @@ def eff_vector(left_state, right_state, layer, layer_idx, gate_idx):
     
     return np.array([deriv(i) for i in range(16)])
     
-def sweep_up_down(left_state, right_state, layer, layer_idx, v_sweeps=5):
+def sweep_up_down(left_state, right_state, layer, layer_idx, min_update=1e-4):
     cost_list = []
-    for sweep in range(v_sweeps): 
+    converged = False
+    while not converged: 
         for gate_idx in range(len(layer)): 
             eff_v = eff_vector(left_state, right_state, layer, layer_idx, gate_idx)
             env_mat = np.dot(eff_v.conj(), pauli_to_standard).reshape(4,4,order='F')
             u, s, vh = np.linalg.svd(env_mat)
             new_gate = vh.conj().T@u.conj().T  
             layer[gate_idx] = new_gate
-            cost_list.append(1-sum(s)**2)
-    return layer, cost_list 
+        
+        cost_list.append(1-sum(s)**2)
+        if len(cost_list) > 2:
+            if np.abs((cost_list[-1] - cost_list[-2])/cost_list[0]) < min_update: 
+                converged = True        
+    return layer, cost_list  
 
-def sweep_left_right(state_to_match, ansatz, h_sweeps=100, v_sweeps=5):
-    cost_list = []
+def sweep_left_right(state_to_match, ansatz, min_update=1e-6):
     left_state_list, right_state_list = all_partial_states(state_to_match, ansatz.layer_list)
-    for sweep in range(h_sweeps):
+    cost_list = [1 - np.abs(state_to_match.conj().T @ state_vector(ansatz.layer_list))**2]
+    converged = False
+    while not converged:
         for lidx in range(ansatz.num_layers): 
-            new_layer, cost = sweep_up_down(left_state_list[lidx], right_state_list[lidx+1], ansatz.layer_list[lidx], lidx, v_sweeps)
+            new_layer, cost = sweep_up_down(left_state_list[lidx], right_state_list[lidx+1], ansatz.layer_list[lidx], lidx)
             ansatz.layer_list[lidx] = new_layer 
             left_state_list[lidx+1] = layer_action(left_state_list[lidx], new_layer, parity=lidx%2, conj=False)
-            cost_list += cost
-            #print(cost_list[-1])
         
         for lidx in range(ansatz.num_layers-1,-1,-1):
-            new_layer, cost = sweep_up_down(left_state_list[lidx], right_state_list[lidx+1], ansatz.layer_list[lidx], lidx, v_sweeps)
+            new_layer, cost = sweep_up_down(left_state_list[lidx], right_state_list[lidx+1], ansatz.layer_list[lidx], lidx)
             ansatz.layer_list[lidx] = new_layer 
-            right_state_list[lidx] = layer_action(right_state_list[lidx+1], new_layer, parity=(ansatz.num_layers-1-lidx)%2, conj=True)
-            cost_list += cost
-            #print(cost_list[-1])
-            
+            right_state_list[lidx] = layer_action(right_state_list[lidx+1], new_layer, parity=lidx%2, conj=True)
+        
+        cost_list.append(cost[-1])
+        if len(cost_list) > 2:
+            if np.abs(cost_list[-1] - cost_list[-2]) < min_update: 
+                converged = True  
     return ansatz, cost_list
 
-def ichs(init_circ, total_time, compression_step_size, trotter_step_size, max_depth, h_sweeps=100, v_sweeps=5): 
+def ichs(init_circ, total_time, compression_step_size, trotter_step_size, max_depth, min_update=1e-6): 
     ''' iteratively compressed hamiltonian simulation with the XXZ model '''
     cur_circ = copy.deepcopy(init_circ)
     exact_state = expm(1.j * total_time * XXZ(cur_circ.num_qubits)) @ state_vector(cur_circ.layer_list)
@@ -78,9 +84,9 @@ def ichs(init_circ, total_time, compression_step_size, trotter_step_size, max_de
     for op in tqdm(op_list, desc=" circuit loop"):
         state_to_match = np.dot(op, state_vector(cur_circ.layer_list))
         ansatz = Ansatz(cur_circ.num_qubits, max_depth) if cur_circ.num_layers < max_depth else copy.deepcopy(cur_circ)
-        cur_circ, cost_list = sweep_left_right(state_to_match, ansatz, h_sweeps, v_sweeps)
+        cur_circ, cost_list = sweep_left_right(state_to_match, ansatz, min_update=min_update)
         compression_infidelities.append(cost_list)
-        
+    
     new_state = state_vector(cur_circ.layer_list)
     exact_fidelity = np.abs(new_state.conj().T @ exact_state)**2
     return cur_circ.layer_list, compression_infidelities, exact_fidelity
