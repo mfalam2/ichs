@@ -90,3 +90,20 @@ def ichs(init_circ, total_time, compression_step_size, trotter_step_size, max_de
     new_state = state_vector(cur_circ.layer_list)
     exact_fidelity = np.abs(new_state.conj().T @ exact_state)**2
     return cur_circ.layer_list, compression_infidelities, exact_fidelity
+
+def optimal_run(output_file, num_qubits, depth_opts, step_size_opts, total_time, min_update=1e-6):
+    init_circ = Ansatz(num_qubits, 1)
+    gate = two_qubit_gate(np.array([np.pi/2, 0, 3*np.pi/2, np.pi/2, 0, np.pi/2, 0,0,0, np.pi/2, -np.pi/2, np.pi, np.pi/2, 3*np.pi/2, 0]))
+    init_circ.layer_list[0] = [gate]*(num_qubits//2)
+    
+    data = []
+    for max_depth in tqdm(depth_opts):
+        each_depth = []
+        for step_size in tqdm(step_size_opts):
+            layer_list, compression_infidelities, exact_fidelity  = ichs(init_circ, total_time, step_size, step_size, max_depth, min_update)
+            layer_list = [[onp.array(gate) for gate in layer] for layer in layer_list]
+            each_depth.append([layer_list, compression_infidelities, 1-exact_fidelity])
+        data.append(each_depth)
+    
+    with open(output_file, 'wb') as f:
+        pickle.dump(data, f)
