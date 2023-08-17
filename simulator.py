@@ -10,6 +10,9 @@ config.update("jax_enable_x64", True)
 pickle_in = open('pauli_info.pickle', 'rb')
 pauli, pauli_tensor, pauli_to_standard = pickle.load(pickle_in)
 pickle_in.close()
+pauli = np.array(pauli)
+pauli_tensor = np.array(pauli_tensor)
+pauli_to_standard = np.array(pauli_to_standard)
 
 #####################################
 ########## GATES ####################
